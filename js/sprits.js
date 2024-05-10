@@ -1,86 +1,143 @@
-//criando constante de gravidade
-const gravidade = 0.6
-//contrutor do
-// sprite do player definindo as caracteristicas q precisa
+const gravity = 0.2
+
+const floorHeight = 96
+
+const backgroundSpritePath = "../assets/background/placeholder.png"
+const defaultObjectSpritePath = "../assets/objects/square.svg"
+
 class Sprite {
-    constructor({ position, dimensions, velocity }){
+    constructor({ position, velocity, source, scale, offset, sprites }) {
         this.position = position
         this.velocity = velocity
-        this.width = dimensions.width
-        this.height = dimensions.height
+
+        this.scale = scale || 1
+        this.image = new Image() 
+        this.image.src = source || defaultObjectSpritePath
+        this.width = this.image.width * this.scale
+        this.height = this.image.height * this.scale
+
+        this.width = this.image.width * this.scale
+        this.height = this.image.height * this.scale
+
+        this.offset = offset || {
+            x: 0,
+            y: 0
+        }
+
+        this.sprites = sprites || {
+            idle: {
+                src: this.image.src,
+                totalSpriteFrames: 1,
+                framesPerSpriteFrame: 1
+            }
+        }
+
+        this.currentSprite = this.sprites.idle
+
+        this.currentSpriteFrame = 0
+        this.elapsedTime = 0
+        this.totalSpriteFrames = this.sprites.idle.totalSpriteFrames
+        this.framesPerSpriteFrame = this.sprites.idle.framesPerSpriteFrame
     }
-    //função pra desenhar o player
-    draw(){
-        ctx.fillStyle = "purple"
-        ctx.fillRect(this.position.x, this.position.y, this.width, this.height)
 
-        if(this.isAttacking){
-            ctx.fillStyle = "purple"
-            ctx.fillRect(this.attackBox.position.x, this.attackBox.position.y, this.attackBox.width, this.attackBox.height)
+    setSprite(sprite) {
+        this.currentSprite = this.sprites[sprite]
+
+        if (!this.currentSprite) {
+            this.currentSprite = this.sprites.idle
         }
     }
-    //funcao de update 
-    update(){
-        if(Math.ceil(this.position.y+this.height >= canvas.height)){
-            this.onGround = true
-        }else{
-            this.onGround = false
+
+    loadSprite() {
+        let previousSprite = this.image.src
+
+        this.image = new Image()
+        this.image.src = this.currentSprite.src
+        this.width = this.image.width * this.scale
+        this.height = this.image.height * this.scale
+
+        this.totalSpriteFrames = this.currentSprite.totalSpriteFrames
+        this.framesPerSpriteFrame = this.currentSprite.framesPerSpriteFrame
+
+        let newSprite = this.image.src
+
+        if (previousSprite !== newSprite) {
+            // Corrects the sprite's position when switching sprites
+            console.log("Detected sprite change: ", previousSprite.split("/").pop(), " -> ", newSprite.split("/").pop())
+            
+            let previousSpriteImage = new Image()
+            previousSpriteImage.src = previousSprite
+
+            // Corrects the sprite's position:
+            this.position.y += (previousSpriteImage.height - this.image.height) * this.scale
         }
+    }
 
+    draw() {        
+        ctx.imageSmoothingEnabled = false;
 
-        if(this.position.y+this.height > canvas.height){
-           this.position.y = canvas.height - this.height
-           this.velocity.y = 0
-        }else{
-            if(!this.onGround) this.velocity.y += gravidade
+        // Determine the x-scale based on the facing direction
+        const xScale = this.facing === "left" ? -1 : 1;
+
+        ctx.save();
+        ctx.translate(this.position.x + this.offset.x, this.position.y + this.offset.y);
+        ctx.scale(xScale, 1); // Flip the image horizontally if facing left
+
+        ctx.drawImage(
+            this.image,
+            this.currentSpriteFrame * this.image.width / this.totalSpriteFrames,
+            0,
+            this.image.width / this.totalSpriteFrames,
+            this.image.height,
+            0,
+            0,
+            this.width / this.totalSpriteFrames * xScale, // Adjust the width with x-scale
+            this.height
+        );
+
+        ctx.restore();
+    }
+
+    animate() {
+        this.elapsedTime += 1
+
+        if (this.elapsedTime >= this.framesPerSpriteFrame) {
+            this.currentSpriteFrame += 1
+
+            if (this.currentSpriteFrame >= this.totalSpriteFrames) {
+                this.currentSpriteFrame = 0
+            }
+
+            this.elapsedTime = 0
         }
+        
+    }
 
-        this.position.x += this.velocity.x
-        this.position.y += this.velocity.y
-
-        this.attackBox.position.x = this.position.x
-        this.attackBox.position.y = this.position.y
-
+    update() {
         this.draw()
-    }
-
-    attack(){
-        if(this.onAttackCooldown) return 
-        this.isAttacking = true
-
-        setTimeout(() =>{
-            this.isAttacking = false
-        }, 100)
-    }
-
-    jump(){
-        if(!this.onGround) return
-        this.velocity.y -= 16
+        this.animate()
     }
 }
-/*
-    classe que vai diferenciar o player imovel
-    para ele em movimento seja andando, correndo ou lutando
-*/
 
-class Fighter extends Sprite{
+class Fighter extends Sprite {
     constructor({
         position,
         velocity,
-        dimensions
+        attackBox,
+        sprites,
+        scale
     }) {
         super({
             position,
             velocity,
-            dimensions
+            scale,
+            sprites
         })
 
         this.velocity = velocity
-        this.width = dimensions.width
-        this.height = dimensions.height
 
-        this.attackBox = {
-            position:{
+        this.attackBox = attackBox || {
+            position: {
                 x: this.position.x,
                 y: this.position.y,
             },
@@ -88,33 +145,105 @@ class Fighter extends Sprite{
             height: 50
         }
 
-        //de attack
-
         this.isAttacking
         this.attackCooldown = 500
         this.onAttackCooldown
 
-        // para arrumar o jump
         this.lastKeyPressed
         this.onGround
     }
-    
+
+    gravity() {
+        if (this.position.y + this.height >= canvas.height - floorHeight) {
+            this.onGround = true
+        } else {
+            this.onGround = false
+        }
+
+        if (this.position.y + this.height > canvas.height - floorHeight) {
+            this.position.y = canvas.height - this.height - floorHeight
+            this.velocity.y = 0
+        } else {
+            if (!this.onGround) this.velocity.y += gravity
+        }
+
+        this.position.x += this.velocity.x
+        this.position.y += this.velocity.y
+
+        this.attackBox.position.x = this.position.x
+        this.attackBox.position.y = this.position.y
+    }
+        
+    update() {
+        this.gravity()
+        this.loadSprite()
+        //this.loadAttackBox()
+        this.draw()
+        this.animate()
+    }
+
+    attack() {
+        if (this.onAttackCooldown) return
+
+        this.isAttacking = true
+        this.onAttackCooldown = true
+
+        player.setSprite("attacking")
+
+        setTimeout(() => {
+            this.isAttacking = false
+        }, 400)
+
+        setTimeout(() => {
+            this.onAttackCooldown = false
+        }, this.attackCooldown)
+    }
+
+    jump() {        
+        if (!this.onGround) return
+        this.velocity.y = -8.5
+    }
+
 }
 
-//diz a posição e dimenções altura e largura do player inicialmente
 const player = new Fighter({
     position: {
-        x: 110,
-        y: 110
-    },
-    velocity:{
-        x: 0,
+        x: 100,
         y: 0
     },
-    dimensions:{
-        width: 50,
-        height: 150
+    velocity: {
+        x: 0,
+        y: 10
+    }, 
+    scale: 4.5,
+    sprites: {
+        idle: {
+            src: "../assets/player/idle.png",
+            totalSpriteFrames: 11,
+            framesPerSpriteFrame: 18
+        },
+        running: {
+            src: "../assets/player/running.png",
+            totalSpriteFrames: 10,
+            framesPerSpriteFrame: 8
+        },
+        jumping: {
+            src: "../assets/player/jumping.png",
+            totalSpriteFrames: 4,
+            framesPerSpriteFrame: 8
+        },
+        attacking: {
+            src: "../assets/player/attacking.png",
+            totalSpriteFrames: 7,
+            framesPerSpriteFrame: 8
+        }
     }
 })
 
-
+const background = new Sprite({
+    position: {
+        x: 0,
+        y: 0
+    },
+    source: backgroundSpritePath
+})
